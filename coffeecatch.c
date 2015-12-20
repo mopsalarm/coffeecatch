@@ -47,7 +47,7 @@
 #if defined(__ANDROID__) && !defined(__BIONIC_HAVE_UCONTEXT_T) && \
     defined(__arm__) && !defined(__BIONIC_HAVE_STRUCT_SIGCONTEXT)
 #include <asm/sigcontext.h>
-#endif 
+#endif
 #if (defined(USE_UNWIND) && !defined(USE_CORKSCREW))
 #include <unwind.h>
 #endif
@@ -112,66 +112,7 @@ typedef struct ucontext {
 
 #elif defined(__i386__)
 
-/* Taken from Google Breakpad. */
-
-/* 80-bit floating-point register */
-struct _libc_fpreg {
-  unsigned short significand[4];
-  unsigned short exponent;
-};
-
-/* Simple floating-point state, see FNSTENV instruction */
-struct _libc_fpstate {
-  unsigned long cw;
-  unsigned long sw;
-  unsigned long tag;
-  unsigned long ipoff;
-  unsigned long cssel;
-  unsigned long dataoff;
-  unsigned long datasel;
-  struct _libc_fpreg _st[8];
-  unsigned long status;
-};
-
-typedef uint32_t  greg_t;
-
-typedef struct {
-  uint32_t gregs[19];
-  struct _libc_fpstate* fpregs;
-  uint32_t oldmask;
-  uint32_t cr2;
-} mcontext_t;
-
-enum {
-  REG_GS = 0,
-  REG_FS,
-  REG_ES,
-  REG_DS,
-  REG_EDI,
-  REG_ESI,
-  REG_EBP,
-  REG_ESP,
-  REG_EBX,
-  REG_EDX,
-  REG_ECX,
-  REG_EAX,
-  REG_TRAPNO,
-  REG_ERR,
-  REG_EIP,
-  REG_CS,
-  REG_EFL,
-  REG_UESP,
-  REG_SS,
-};
-
-#if !defined(__BIONIC_HAVE_UCONTEXT_T)
-typedef struct ucontext {
-  uint32_t uc_flags;
-  struct ucontext* uc_link;
-  stack_t uc_stack;
-  mcontext_t uc_mcontext;
-} ucontext_t;
-#endif
+/* Nothing to do */
 
 #elif defined(__mips__)
 
@@ -206,6 +147,12 @@ typedef struct ucontext {
   mcontext_t uc_mcontext;
 } ucontext_t;
 #endif
+
+#elif defined(__x86_64__)
+
+/* already defined */
+
+#elif defined(__aarch64__)
 
 #else
 #error "Architecture is not supported (unknown ucontext layout)"
@@ -332,26 +279,26 @@ coffeecatch_unwind_callback(struct _Unwind_Context* context, void* arg) {
    Will only return a non-zero code on Android >= 4 (with libcorkscrew.so
    being shipped) */
 #ifdef USE_CORKSCREW
-static size_t coffeecatch_backtrace_signal(siginfo_t* si, void* sc, 
+static size_t coffeecatch_backtrace_signal(siginfo_t* si, void* sc,
                                            backtrace_frame_t* frames,
                                            size_t ignore_depth,
                                            size_t max_depth) {
   void *const libcorkscrew = dlopen("libcorkscrew.so", RTLD_LAZY | RTLD_LOCAL);
   if (libcorkscrew != NULL) {
-    t_unwind_backtrace_signal_arch unwind_backtrace_signal_arch 
+    t_unwind_backtrace_signal_arch unwind_backtrace_signal_arch
       = (t_unwind_backtrace_signal_arch)
       dlsym(libcorkscrew, "unwind_backtrace_signal_arch");
-    t_acquire_my_map_info_list acquire_my_map_info_list 
+    t_acquire_my_map_info_list acquire_my_map_info_list
       = (t_acquire_my_map_info_list)
       dlsym(libcorkscrew, "acquire_my_map_info_list");
-    t_release_my_map_info_list release_my_map_info_list 
+    t_release_my_map_info_list release_my_map_info_list
       = (t_release_my_map_info_list)
       dlsym(libcorkscrew, "release_my_map_info_list");
     if (unwind_backtrace_signal_arch != NULL
         && acquire_my_map_info_list != NULL
         && release_my_map_info_list != NULL) {
       map_info_t*const info = acquire_my_map_info_list();
-      const ssize_t size = 
+      const ssize_t size =
         unwind_backtrace_signal_arch(si, sc, info, frames, ignore_depth,
                                      max_depth);
       release_my_map_info_list(info);
@@ -374,10 +321,10 @@ static int coffeecatch_backtrace_symbols(const backtrace_frame_t* backtrace,
   int success = 0;
   void *const libcorkscrew = dlopen("libcorkscrew.so", RTLD_LAZY | RTLD_LOCAL);
   if (libcorkscrew != NULL) {
-    t_get_backtrace_symbols get_backtrace_symbols 
+    t_get_backtrace_symbols get_backtrace_symbols
       = (t_get_backtrace_symbols)
       dlsym(libcorkscrew, "get_backtrace_symbols");
-    t_free_backtrace_symbols free_backtrace_symbols 
+    t_free_backtrace_symbols free_backtrace_symbols
       = (t_free_backtrace_symbols)
       dlsym(libcorkscrew, "free_backtrace_symbols");
     if (get_backtrace_symbols != NULL
@@ -408,7 +355,7 @@ static int coffeecatch_backtrace_symbols(const backtrace_frame_t* backtrace,
    Will only return a non-zero code on Android >= 5 (with libunwind.so
    being shipped) */
 #ifdef USE_LIBUNWIND
-static ssize_t coffeecatch_unwind_signal(siginfo_t* si, void* sc, 
+static ssize_t coffeecatch_unwind_signal(siginfo_t* si, void* sc,
                                          void** frames,
                                          size_t ignore_depth,
                                          size_t max_depth) {
@@ -1123,6 +1070,8 @@ uintptr_t coffeecatch_get_backtrace(ssize_t index) {
 static uintptr_t coffeecatch_get_pc_from_ucontext(const ucontext_t *uc) {
 #if (defined(__arm__))
   return uc->uc_mcontext.arm_pc;
+#elif (defined(__aarch64__))
+  return uc->uc_mcontext.pc;
 #elif (defined(__x86_64__))
   return uc->uc_mcontext.gregs[REG_RIP];
 #elif (defined(__i386))
@@ -1158,8 +1107,8 @@ static int coffeecatch_is_dll(const char *name) {
 }
 
 /* Extract a line information on a PC address. */
-static void format_pc_address_cb(uintptr_t pc, 
-                                 void (*fun)(void *arg, const char *module, 
+static void format_pc_address_cb(uintptr_t pc,
+                                 void (*fun)(void *arg, const char *module,
                                              uintptr_t addr,
                                              const char *function,
                                              uintptr_t offset), void *arg) {
@@ -1318,7 +1267,7 @@ typedef struct t_coffeecatch_backtrace_symbols_fun {
 static void coffeecatch_backtrace_symbols_fun(void *arg, const backtrace_symbol_t *sym) {
   t_coffeecatch_backtrace_symbols_fun *const bt =
     (t_coffeecatch_backtrace_symbols_fun*) arg;
-  const char *symbol = sym->demangled_name != NULL 
+  const char *symbol = sym->demangled_name != NULL
     ? sym->demangled_name : sym->symbol_name;
   const uintptr_t rel = sym->relative_pc - sym->relative_symbol_addr;
   bt->fun(bt->arg, sym->map_name, sym->relative_pc, symbol, rel);
